@@ -21,7 +21,7 @@ calculate_annual_metrics <- function(target_name, site_files, ice_files, morphom
     data_stratification <- data_ready %>% 
       group_by(date) %>% 
       summarize(wtr_surf_daily = wtr[depth == 0],
-                wtr_bot_daily = find_wtr_at_depth(wtr, depth, calc_lake_bottom(depth)),
+                wtr_bot_daily = find_wtr_at_depth(wtr, depth, NA),
                 .groups = "keep") %>% 
       mutate(stratified = is_stratified(wtr_surf_daily, wtr_bot_daily, force_warm = TRUE)) %>% 
       ungroup() %>% 
@@ -199,6 +199,11 @@ bottom_temp_at_strat <- function(date, wtr_bot, year, stratification_onset_yday)
 
 #' @description Sum of daily Schmidt Stability values for calendar year.
 schmidt_daily_annual_sum <- function(date, depth, wtr, ice_on_date, ice_off_date, hypso) {
+  # TODO: remove the removal of these NAs
+  date <- date[!is.na(wtr)]
+  depth <- depth[!is.na(wtr)]
+  wtr <- wtr[!is.na(wtr)]
+  
   tibble(date, depth, wtr) %>% 
     # Only use days with open water (no ice)
     filter(date >= ice_off_date & date <= ice_on_date) %>%
@@ -345,6 +350,13 @@ calc_lake_bottom <- function(depth) {
 # Doesn't consider dates at all
 # Assumes linear interpolation for depth-wtr relationship
 find_wtr_at_depth <- function(wtr, depth, depth_to_find) {
+  depth_wtr <- dropNAs(depth, wtr) #TODO: remove all this stuff
+  depth <- depth_wtr$depth
+  wtr <- depth_wtr$wtr
+  
+  # redo bottom depth calc to use NA-free depths
+  if(is.na(depth_to_find)) depth_to_find <- calc_lake_bottom(depth)
+  
   approx(depth, wtr, depth_to_find)$y
 }
 
@@ -419,6 +431,10 @@ get_wtr_post_ice_off <- function(date, wtr, ice_off_date, day_post_range) {
 #   a shared function to do this, so kept it separate.
 find_Z1_Z2 <- function(wtr, depth, wtr_upper_bound, wtr_lower_bound) {
   
+  depth_wtr <- dropNAs(depth, wtr)
+  depth <- depth_wtr$depth
+  wtr <- depth_wtr$wtr
+  
   z_surface <- 0
   z_max <- max(depth) #TODO: include hypso bc max might be different than wtr depths
   
@@ -476,4 +492,12 @@ calc_volume <- function(Z1, Z2, hypso) {
   A1 <- resample_hypso(hypso, Z1)$areas
   A2 <- resample_hypso(hypso, Z2)$areas
   abs(A2-A1)*(Z2-Z1)/3
+}
+
+dropNAs <- function(depth, wtr) {
+  # TODO: remove this, temporary for 2017 data.
+  # Drop NAs (like TOHA code does at beginning)
+  depth <- depth[!is.na(wtr)]
+  wtr <- wtr[!is.na(wtr)] # remove any temp profiles that are NA
+  return(list(depth = depth, wtr = wtr))
 }
